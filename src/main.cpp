@@ -28,6 +28,9 @@
 #define UNIX_OFFSET   946684800
 #define NTP_OFFSET   3155673600
 
+//moving average samples
+#define NUM_SAMPLES 500
+
 WiFiUDP ntpUDP;
 WiFiManager wifiManager;
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 0, 60000);
@@ -35,7 +38,9 @@ Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUM_PIXELS, D5, NEO_GRB + NEO_KHZ80
 
 uint16_t HUE = 65535; //Color of the LEDs, initialize to red
 uint8_t SATURATION = 0; //Saturation of LEDs
-uint8_t BRIGHTNESS = 5; //Brightness of LEDs
+double BRIGHTNESS = 5; //Brightness of LEDs
+uint8_t MAX_BRIGHTNESS = 200;
+uint8_t MIN_BRIGHTNESS = 1;
 
 struct tm * time_struct; //time structure for DST correction
 
@@ -165,7 +170,7 @@ String getFullFormattedTime() {
 //turn on pixel
 void on(int pixel)
 {
-  pixels.setPixelColor(pixel,Adafruit_NeoPixel::ColorHSV(HUE, SATURATION, BRIGHTNESS));
+  pixels.setPixelColor(pixel,Adafruit_NeoPixel::ColorHSV(HUE, SATURATION, 1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS)));
 }
 
 #define _WIFI {on(0);on(1);on(6);on(7);};
@@ -350,6 +355,15 @@ void showTime()
 
 }
 
+void updateBrightness() {
+
+    double new_brightness = ((analogRead(A0) * (MAX_BRIGHTNESS - MIN_BRIGHTNESS)) / 1024) + MIN_BRIGHTNESS;
+    //Serial.print("new brightness: ");
+    //Serial.println(new_brightness);
+    BRIGHTNESS -= BRIGHTNESS / NUM_SAMPLES;
+    BRIGHTNESS += new_brightness / NUM_SAMPLES;
+}
+
 void setup()
 {
   Serial.begin(9600);
@@ -374,6 +388,8 @@ void loop()
 {
   ArduinoOTA.handle();
   timeClient.update();
+  updateBrightness();
+  //Serial.println(BRIGHTNESS);
   pixels.clear();
   showTime();
   pixels.show();
