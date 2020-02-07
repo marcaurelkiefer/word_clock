@@ -5,6 +5,7 @@
 #include <WifiManager.h>
 #include <NTPClient.h>
 #include <WiFiUdp.h>
+#include <ArduinoOTA.h>
 #include <time.h>
 
 //GPIO pins
@@ -353,13 +354,15 @@ void setup()
 {
   Serial.begin(9600);
   wifiManager.autoConnect("WORD CLOCK");
+  ArduinoOTA.setHostname("Word_Clock_OTA");
+  ArduinoOTA.begin();
   timeClient.begin();
 
   //clear pixels
   pixels.begin();
   pixels.show();
 
-  Serial.println("Hallo");
+  Serial.println("Hallo OTA");
   
   
 
@@ -369,6 +372,7 @@ void setup()
 // the loop function runs over and over again forever
 void loop()
 {
+  ArduinoOTA.handle();
   timeClient.update();
   pixels.clear();
   showTime();
