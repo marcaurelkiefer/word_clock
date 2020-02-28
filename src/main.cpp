@@ -7,6 +7,9 @@
 #include <WiFiUdp.h>
 #include <ArduinoOTA.h>
 #include <time.h>
+#include <EEPROM.h>
+#include <Esp.h>
+#include <OneButton.h>
 
 //GPIO pins
 #define D0 16
@@ -22,6 +25,10 @@
 #define D10 1 // TX0 (Serial console)
 
 #define NUM_PIXELS 112 //number of LEDs
+#define ANIMATION_MILLIS 2000 //duration of animation in millisecs
+#define A_TURN_OFF 1 //Animation turn off
+#define A_TURN_ON 2 //Animation turn on
+#define A_STAY_ON 3 //Animation stay on
 
 //NTP constants
 #define ONE_HOUR 3600
@@ -31,18 +38,34 @@
 //moving average samples
 #define NUM_SAMPLES 500
 
+#define EEPROM_SIZE 3 //RGB color
+
 WiFiUDP ntpUDP;
 WiFiManager wifiManager;
+WiFiServer server(80);
 NTPClient timeClient(ntpUDP, "europe.pool.ntp.org", 0, 60000);
 Adafruit_NeoPixel pixels = Adafruit_NeoPixel(NUM_PIXELS, D5, NEO_GRB + NEO_KHZ800);
+OneButton button(D7,true);
 
-uint16_t HUE = 65535; //Color of the LEDs, initialize to red
-uint8_t SATURATION = 0; //Saturation of LEDs
-double BRIGHTNESS = 5; //Brightness of LEDs
-uint8_t MAX_BRIGHTNESS = 200;
-uint8_t MIN_BRIGHTNESS = 1;
+uint16_t COLOR = 0; //Color of the LEDs, initialize to red
+double BRIGHTNESS = 30; //Brightness of LEDs
+uint8_t MAX_BRIGHTNESS = 200; //80
+uint8_t MIN_BRIGHTNESS = 30; //30
+uint8_t pixel_array[NUM_PIXELS] = {0};
 
 struct tm * time_struct; //time structure for DST correction
+
+//webserver
+// Variable to store the HTTP request
+String header;
+
+// Current time
+unsigned long currentTime = millis();
+// Previous time
+unsigned long previousTime = 0; 
+// Define timeout time in milliseconds (example: 2000ms = 2s)
+const long timeoutTime = 2000;
+
 
 enum _MONTHS_
 {
@@ -167,10 +190,41 @@ String getFullFormattedTime() {
           hoursStr + ":" + minuteStr + ":" + secondStr;
 }
 
+
+
+//FARBEN
+uint16_t colors[] = {0, 2340, 14040, 21064, 31590, 42120, 47970, 60840, 63765,0};
+uint8_t saturations[] = {255,255,255,255,255,255,255,255,255,0};
+static_assert(sizeof(colors)/sizeof(uint16_t) == sizeof(saturations)/sizeof(uint8_t),"Size of colors not equal to size of saturations");
+int num_colors = sizeof(colors)/sizeof(uint16_t);
+#define C_ROT 0
+#define C_ORANGE 1
+#define C_GELB 2
+#define C_GRUEN 3
+#define C_CYAN 4
+#define C_BLAU 5
+#define C_LILA 6
+#define C_ROSA 7
+#define C_PINK 8
+
+//EEPROM
+#define EEPROM_IDX_COLOR 0
+#define EEPROM_IDX_SAT 1
+
 //turn on pixel
 void on(int pixel)
 {
-  pixels.setPixelColor(pixel,Adafruit_NeoPixel::ColorHSV(HUE, SATURATION, 1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS)));
+
+  if (pixel_array[pixel] == 1)
+  {
+    pixel_array[pixel] = A_STAY_ON; // Stay on
+  }
+  else
+  {
+    pixel_array[pixel] = A_TURN_ON; //Turn on
+  }
+  
+  //pixels.setPixelColor(pixel,Adafruit_NeoPixel::ColorHSV(colors[COLOR], saturations[COLOR], 1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS)));
 }
 
 #define _WIFI {on(0);on(1);on(6);on(7);};
@@ -205,6 +259,7 @@ void on(int pixel)
 #define _UHR {on(106);on(107);on(108);};
 #define _ERROR_M {on(9);on(26);on(39);on(62);on(73);on(49);};
 #define _ERROR_H {on(9);on(26);on(39);on(62);on(73);on(107);};
+
 
 void showTime()
 {
@@ -355,42 +410,426 @@ void showTime()
 
 }
 
-void updateBrightness() {
+void updateDisplay(bool animation = true)
+{
+  bool update = false;
+  //check for display change
+  for (int i = 0; i < NUM_PIXELS; i++)
+  {
+    if (pixel_array[i] == A_TURN_OFF || pixel_array[i] == A_TURN_ON)
+    {
+      update=true;
+      break;
+    }
+    else
+    {
+      for (int i = 0; i < NUM_PIXELS; i++)
+      {
+        if (pixel_array[i] == 1 || pixel_array[i] == 3)
+        {
+          pixels.setPixelColor(i,Adafruit_NeoPixel::ColorHSV(colors[COLOR], saturations[COLOR], 1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS)));
+        }
+      }
+      pixels.show();
+    }
+    
+  }
+  if (update)
+  { 
+    if (animation)
+    {
+      Serial.println("--------------------UPDATE-----------------");
+      Serial.print("gamma brightness: ");
+      Serial.println(1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS));
+      for (int bright= 1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS); bright >= 0; bright--)
+      {
+        for (int i = 0; i < NUM_PIXELS; i++)
+        {
+          
+          if (pixel_array[i] == A_TURN_OFF)
+          {
+            pixels.setPixelColor(i,Adafruit_NeoPixel::ColorHSV(colors[COLOR], saturations[COLOR], bright));
+          }
+          if (pixel_array[i] == A_STAY_ON)
+          {
+            pixels.setPixelColor(i,Adafruit_NeoPixel::ColorHSV(colors[COLOR], saturations[COLOR], 1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS)));
+          }
+        }
+        pixels.show();
+        delay(ANIMATION_MILLIS/BRIGHTNESS);
+      }
+      for (int bright= 0; bright <= 1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS); bright++)
+      {
+        for (int i = 0; i < NUM_PIXELS; i++)
+        {
+          
+          if (pixel_array[i] == A_TURN_ON)
+          {
+            pixels.setPixelColor(i,Adafruit_NeoPixel::ColorHSV(colors[COLOR], saturations[COLOR], bright));
+          }
+          if (pixel_array[i] == A_STAY_ON)
+          {
+            pixels.setPixelColor(i,Adafruit_NeoPixel::ColorHSV(colors[COLOR], saturations[COLOR], 1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS)));
+          }
+        }
+        pixels.show();
+        delay(ANIMATION_MILLIS/BRIGHTNESS);
+      }
+    }
+    else
+    {
+      for (int i = 0; i < NUM_PIXELS; i++)
+      {
+        if (pixel_array[i] == A_TURN_ON || pixel_array[i] == A_STAY_ON)
+        {
+          pixels.setPixelColor(i,Adafruit_NeoPixel::ColorHSV(colors[COLOR], saturations[COLOR], 1 + Adafruit_NeoPixel::gamma8(BRIGHTNESS)));
+        }
+      }
+      pixels.show();
+    }
+      
+    //clean up array
+    for (int i = 0; i < NUM_PIXELS; i++)
+    {
+      //Serial.print(pixel_array[i]);
+      
+      switch (pixel_array[i])
+      {
+        case 0:
+          //is off, stay off
+          break;
+        case A_TURN_OFF:
+          pixel_array[i] = 0;
+          break;
+        case A_TURN_ON:
+          pixel_array[i] = 1;
+          break;
+        case A_STAY_ON:
+          pixel_array[i] = 1;
+          break;
+        default:
+          Serial.print("pixel_array error value: ");
+          Serial.println(pixel_array[i]);
+      }
+    }
+  }
+  else
+  {
+    {
+      //clean up array
+    for (int i = 0; i < NUM_PIXELS; i++)
+    {
+      //Serial.print(pixel_array[i]);
+      
+      if (pixel_array[i] == A_STAY_ON)
+      {
+        pixel_array[i] = 1;
+      } 
+    }
+    }
+  }
+  
+}
+void colorPicker()
+{
+  for (int i = 0; i < NUM_PIXELS; i++)
+  {
+    //pixels.setPixelColor(i,Adafruit_NeoPixel::gamma32(Adafruit_NeoPixel::ColorHSV((65535/NUM_PIXELS)*i,255,30)));
+    pixels.setPixelColor(i,Adafruit_NeoPixel::ColorHSV((65535/NUM_PIXELS)*i,255,30));
+  }
+  pixels.show();
+}
 
+void updateBrightness(bool instant = false) {
     double new_brightness = ((analogRead(A0) * (MAX_BRIGHTNESS - MIN_BRIGHTNESS)) / 1024) + MIN_BRIGHTNESS;
     //Serial.print("new brightness: ");
     //Serial.println(new_brightness);
-    BRIGHTNESS -= BRIGHTNESS / NUM_SAMPLES;
-    BRIGHTNESS += new_brightness / NUM_SAMPLES;
+    if (instant)
+    {
+      BRIGHTNESS = new_brightness;
+    }
+    else
+    {
+      BRIGHTNESS -= BRIGHTNESS / NUM_SAMPLES;
+      BRIGHTNESS += new_brightness / NUM_SAMPLES;
+    }
+}
+
+void setColor(uint8_t color)
+{
+  if (color < num_colors)
+  {
+    COLOR = color;
+    if (EEPROM.read(EEPROM_IDX_COLOR) != color)
+    {
+      EEPROM.write(EEPROM_IDX_COLOR, color);
+      EEPROM.commit();
+    }
+  }
+}
+
+void initColor()
+{
+  uint8_t color = EEPROM.read(EEPROM_IDX_COLOR);
+  COLOR = color;
+}
+
+
+
+boolean wifiConnect()
+{
+  WiFi.mode(WIFI_STA);
+
+  if (wifiManager.connectWifi("", "") == WL_CONNECTED)   {
+    //connected
+    return true;
+  }
+
+  return false;
+}
+
+void handleWebserver()
+{
+  WiFiClient client = server.available();   // Listen for incoming clients
+
+  if (client) {                             // If a new client connects,
+    Serial.println("New Client.");          // print a message out in the serial port
+    String currentLine = "";                // make a String to hold incoming data from the client
+    currentTime = millis();
+    previousTime = currentTime;
+    while (client.connected() && currentTime - previousTime <= timeoutTime) { // loop while the client's connected
+      yield();
+      currentTime = millis();         
+      if (client.available()) {             // if there's bytes to read from the client,
+        char c = client.read();             // read a byte, then
+        Serial.write(c);                    // print it out the serial monitor
+        header += c;
+        if (c == '\n') {                    // if the byte is a newline character
+          // if the current line is blank, you got two newline characters in a row.
+          // that's the end of the client HTTP request, so send a response:
+          if (currentLine.length() == 0) {
+            // HTTP headers always start with a response code (e.g. HTTP/1.1 200 OK)
+            // and a content-type so the client knows what's coming, then a blank line:
+            client.println("HTTP/1.1 200 OK");
+            client.println("Content-type:text/html");
+            client.println("Connection: close");
+            client.println();
+            
+            // turns the GPIOs on and off
+            
+            if (header.indexOf("GET /color/gruen") >= 0) {
+              Serial.println("Setze Farbe Grün");
+              setColor(C_GRUEN);
+            }
+            else if (header.indexOf("GET /color/rot") >= 0) {
+              Serial.println("Setze Farbe Rot");
+              setColor(C_ROT);
+            }
+            else if (header.indexOf("GET /color/blau") >= 0) {
+              Serial.println("Setze Farbe Blau");
+              setColor(C_BLAU);
+            }
+            else if (header.indexOf("GET /color/cyan") >= 0) {
+              Serial.println("Setze Farbe Cyan");
+              setColor(C_CYAN);
+            }
+            else if (header.indexOf("GET /color/gelb") >= 0) {
+              Serial.println("Setze Farbe Gelb");
+              setColor(C_GELB);
+            }
+            else if (header.indexOf("GET /color/lila") >= 0) {
+              Serial.println("Setze Farbe Lila");
+              setColor(C_LILA);
+            }
+            else if (header.indexOf("GET /color/orange") >= 0) {
+              Serial.println("Setze Farbe Orange");
+              setColor(C_ORANGE);
+            }
+            else if (header.indexOf("GET /color/pink") >= 0) {
+              Serial.println("Setze Farbe Pink");
+              setColor(C_PINK);
+            }
+            else if (header.indexOf("GET /color/rosa") >= 0) {
+              Serial.println("Setze Farbe Rosa");
+              setColor(C_ROSA);
+            }
+            else if(header.indexOf("GET /h") >= 0) 
+            {
+              int pos1 = header.indexOf('h');
+              int pos2 = header.indexOf('&');
+              String hueString = header.substring(pos1+2, pos2);
+              /*Serial.println(redString.toInt());
+              Serial.println(greenString.toInt());
+              Serial.println(blueString.toInt());*/
+              Serial.print("new COLOR: ");
+              Serial.print(hueString);
+              COLOR = hueString.toInt();
+            }
+            
+            // Display the HTML web page
+            client.println("<!DOCTYPE html><html>");
+            client.println("<head><meta name=\"viewport\" content=\"width=device-width, initial-scale=1\", charset=\"UTF-8\">");
+            client.println("<link rel=\"icon\" href=\"data:,\">");
+            client.println("<link rel=\"stylesheet\" href=\"https://stackpath.bootstrapcdn.com/bootstrap/4.3.1/css/bootstrap.min.css\">");
+            client.println("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/jscolor/2.0.4/jscolor.min.js\"></script>");
+            // CSS to style the on/off buttons 
+            // Feel free to change the background-color and font-size attributes to fit your preferences
+            client.println("<style>html { font-family: Helvetica; display: inline-block; margin: 0px auto; text-align: center;}");
+            client.println(".button { background-color: #195B6A; border: none; color: white; padding: 16px 40px;");
+            client.println("text-decoration: none; font-size: 30px; margin: 2px; cursor: pointer;}");
+            client.println(".button2 {background-color: #77878A;}</style></head>");
+            
+            
+            
+            // Web Page Heading
+            client.println("<body><h1>Word Clock</h1>");
+            
+            client.println("<p><a href=\"/color/gruen\"><button class=\"button\">Grün</button></a></p>");
+            client.println("<p><a href=\"/color/rot\"><button class=\"button\">Rot</button></a></p>");
+            client.println("<p><a href=\"/color/blau\"><button class=\"button\">Blau</button></a></p>");
+            client.println("<p><a href=\"/color/cyan\"><button class=\"button\">Cyan</button></a></p>");
+            client.println("<p><a href=\"/color/gelb\"><button class=\"button\">Gelb</button></a></p>");
+            client.println("<p><a href=\"/color/lila\"><button class=\"button\">Lila</button></a></p>");
+            client.println("<p><a href=\"/color/orange\"><button class=\"button\">Orange</button></a></p>");
+            client.println("<p><a href=\"/color/pink\"><button class=\"button\">Pink</button></a></p>");
+            client.println("<p><a href=\"/color/rosa\"><button class=\"button\">Rosa</button></a></p>");
+            client.println("<input type=\"range\" min=\"0\" max=\"65535\" value=\"0\" id=\"sliderRange\" name=\"Farbe\">");
+            client.println("<p><a href=\"/h=0&\" id=\"hsv_link\"><button id=\"hsv_button\" class=\"button\">0</button></a></p>");
+            client.println("<script>var rangeslider = document.getElementById(\"sliderRange\");var button = document.getElementById(\"hsv_button\");var link = document.getElementById(\"hsv_link\"); rangeslider.oninput = function() { link.href = \"/h=\" + this.value + \"&\"; button.innerHTML = this.value;}</script>");
+            // The HTTP response ends with another blank line
+            client.println();
+            client.println("</body></html>");
+            
+            // The HTTP response ends with another blank line
+            client.println();
+            // Break out of the while loop
+            break;
+          } else { // if you got a newline, then clear currentLine
+            currentLine = "";
+          }
+        } else if (c != '\r') {  // if you got anything else but a carriage return character,
+          currentLine += c;      // add it to the end of the currentLine
+        }
+      }
+    }
+    // Clear the header variable
+    header = "";
+    // Close the connection
+    client.stop();
+    Serial.println("Client disconnected.");
+    Serial.println("");
+  }
+}
+
+void buttonClick()
+{
+  setColor((COLOR+1) % num_colors);
+  Serial.println(COLOR);
+}
+
+void debugColors()
+{
+  for (int i = 0; i < NUM_PIXELS; i++)
+  {
+    Serial.print(pixel_array[i]);
+    Serial.print(",");
+  }
+  Serial.println();
 }
 
 void setup()
 {
-  Serial.begin(9600);
-  wifiManager.autoConnect("WORD CLOCK");
-  ArduinoOTA.setHostname("Word_Clock_OTA");
-  ArduinoOTA.begin();
+  //Serial.begin(74880);
+  Serial.begin(115200);
+  struct	rst_info	*rtc_info	=	system_get_rst_info();
+  Serial.print("reset	reason:	");
+  Serial.println(rtc_info->reason);
+
+	 if	(rtc_info->reason	==	REASON_WDT_RST	||
+
+	 	 rtc_info->reason	==	REASON_EXCEPTION_RST	||
+
+	 	 rtc_info->reason	==	REASON_SOFT_WDT_RST)	{
+
+	 	 if	(rtc_info->reason	==	REASON_EXCEPTION_RST)	{
+
+	 	 	 Serial.print("Fatal	exception	(%d):");
+      Serial.println(rtc_info->exccause);
+
+	 	 }
+
+	 	 //os_printf("epc1=0x%08x,	epc2=0x%08x,	epc3=0x%08x,	excvaddr=0x%08x,depc=0x%08x\n",rtc_info->epc1,	rtc_info->epc2,	rtc_info->epc3,	rtc_info->excvaddr,	rtc_info->depc);
+      //The	address	of	the	last	crash	is	printed,	which	is	used	to	debug	garbled	output.
+	 }
+  
+  
+  pixels.begin();
+
+  button.attachClick(buttonClick);
+  
+  
+  //try to connect to WIFI
+  /*Serial.println("Setze WIFI LEDS");
+  BRIGHTNESS = 255;
+  COLOR = C_ROT;
+  SATURATION = 255;
+  _WIFI;
+  pixels.show();
+  delay(5000);
+  Serial.println("Verbinde mit WIFI");
+  while (!wifiConnect())
+  {
+    delay(2000);
+  }
+*/
   timeClient.begin();
 
-  //clear pixels
-  pixels.begin();
-  pixels.show();
+  wifiManager.autoConnect("WORD CLOCK");
+  server.begin();
+  ArduinoOTA.setHostname("Word_Clock_OTA");
+  ArduinoOTA.begin();
 
+  EEPROM.begin(EEPROM_SIZE);
+  initColor();
+  
   Serial.println("Hallo OTA");
-  
-  
-
-  pixels.show();
+  timeClient.update();
+  delay(2000);
+  timeClient.update();
+  updateBrightness(true);
+  showTime();
+  updateDisplay(false);
 }
 
 // the loop function runs over and over again forever
 void loop()
 {
+  button.tick();
   ArduinoOTA.handle();
+  wdt_reset();
+  yield();
   timeClient.update();
+  wdt_reset();
+  yield();
   updateBrightness();
-  //Serial.println(BRIGHTNESS);
+  yield();
+  button.tick();
   pixels.clear();
+  wdt_reset();
+  yield();
+  //Serial.println("before showTime:");
+  //debugColors();
   showTime();
-  pixels.show();
+  //Serial.println("after showTime:");
+  //debugColors();
+  updateDisplay();
+  //Serial.println("after updateDisplay:");
+  //debugColors();
+  //colorPicker();
+  wdt_reset();
+  yield();
+  handleWebserver();
+  
+  
+  
 }
