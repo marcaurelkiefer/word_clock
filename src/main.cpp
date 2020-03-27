@@ -261,14 +261,14 @@ void on(int pixel)
 #define _ERROR_H {on(9);on(26);on(39);on(62);on(73);on(107);};
 
 
-void showTime()
+bool showTime()
 {
   //sometimes a weird time is returned, workaround!
   if (getYear() < 2020)
   {
     Serial.println("Wrong time:");
     Serial.println(getFullFormattedTime());
-    return;
+    return false;
   }
   else
   {
@@ -418,7 +418,7 @@ void showTime()
   {
     _ERROR_H
   }
-  
+  return true;  
 
 }
 
@@ -831,10 +831,11 @@ void loop()
   yield();
   //Serial.println("before showTime:");
   //debugColors();
-  showTime();
-  //Serial.println("after showTime:");
+  if (showTime())
+  {//Serial.println("after showTime:");
   //debugColors();
   updateDisplay();
+  }
   //Serial.println("after updateDisplay:");
   //debugColors();
   //colorPicker();
