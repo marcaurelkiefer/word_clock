@@ -245,7 +245,7 @@ void on(int pixel)
 //STUNDEN
 #define _H_EINS {on(68);on(67);on(66);on(65);};
 #define _H_ZWEI {on(96);on(97);on(98);on(99);};
-#define _H_DREI {Serial.println(getFullFormattedTime());Serial.println(timeClient.getEpochTime());Serial.println(timeClient.getFormattedTime());on(90);on(89);on(88);on(87);};
+#define _H_DREI {on(90);on(89);on(88);on(87);};
 #define _H_VIER {on(70);on(71);on(72);on(73);};
 #define _H_FUENF {on(103);on(102);on(101);on(100);};
 #define _H_SECHS {on(74);on(75);on(76);on(77);on(78);};
@@ -266,8 +266,15 @@ void showTime()
   //sometimes a weird time is returned, workaround!
   if (getYear() < 2020)
   {
+    Serial.println("Wrong time:");
+    Serial.println(getFullFormattedTime());
     return;
   }
+  else
+  {
+    pixels.clear();
+  }
+  
   unsigned int min = getMinute();
   unsigned int hour = getHour();
 
@@ -819,7 +826,7 @@ void loop()
   updateBrightness();
   yield();
   button.tick();
-  pixels.clear();
+  //pixels.clear();
   wdt_reset();
   yield();
   //Serial.println("before showTime:");
