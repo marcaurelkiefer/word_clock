@@ -263,6 +263,11 @@ void on(int pixel)
 
 void showTime()
 {
+  //sometimes a weird time is returned, workaround!
+  if (getYear() < 2020)
+  {
+    return;
+  }
   unsigned int min = getMinute();
   unsigned int hour = getHour();
 
