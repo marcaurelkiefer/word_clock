@@ -119,17 +119,17 @@ unsigned long correct_dst(const unsigned long epoch_time)
   if (month == MARCH)
   {
     if (d < mday)
-      return epoch_time + 3600;
-    if (d > mday)
       return epoch_time + 7200;
+    if (d > mday)
+      return epoch_time + 3600;
     if (hour < 1)
       return epoch_time + 3600;
     return epoch_time + 7200;
   }
   if (d < mday)
-    return epoch_time + 7200;
-  if (d > mday)
     return epoch_time + 3600;
+  if (d > mday)
+    return epoch_time + 7200;
   if (hour < 1)
     return epoch_time + 7200;
   return epoch_time + 3600;
@@ -245,7 +245,7 @@ void on(int pixel)
 //STUNDEN
 #define _H_EINS {on(68);on(67);on(66);on(65);};
 #define _H_ZWEI {on(96);on(97);on(98);on(99);};
-#define _H_DREI {on(90);on(89);on(88);on(87);};
+#define _H_DREI {Serial.println(getFullFormattedTime());Serial.println(timeClient.getEpochTime());Serial.println(timeClient.getFormattedTime());on(90);on(89);on(88);on(87);};
 #define _H_VIER {on(70);on(71);on(72);on(73);};
 #define _H_FUENF {on(103);on(102);on(101);on(100);};
 #define _H_SECHS {on(74);on(75);on(76);on(77);on(78);};
