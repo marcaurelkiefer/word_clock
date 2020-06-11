@@ -259,7 +259,22 @@ void on(int pixel)
 #define _UHR {on(106);on(107);on(108);};
 #define _ERROR_M {on(9);on(26);on(39);on(62);on(73);on(49);};
 #define _ERROR_H {on(9);on(26);on(39);on(62);on(73);on(107);};
+#define _HAPPY_BIRTHDAY {on(10);on(17);on(22);on(34);on(69);on(53);on(71);on(73);on(80);on(91);on(90);on(92);on(110);}
 
+bool birthday()
+{
+  if (getMonth() == 6 && getDay() == 25)
+  {
+    //Papa
+    return true;
+  }
+  if (getMonth() == 8 && getDay() == 15)
+  {
+    //Mama
+    return true;
+  }
+  return false;
+}
 
 bool showTime()
 {
@@ -273,6 +288,12 @@ bool showTime()
   else
   {
     pixels.clear();
+  }
+
+  if (birthday())
+  {
+    _HAPPY_BIRTHDAY
+    return true;
   }
   
   unsigned int min = getMinute();
