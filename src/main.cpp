@@ -94,9 +94,8 @@ unsigned long correct_dst(const unsigned long epoch_time)
   gmtime_r(&timer, &tmptr);
   month = tmptr.tm_mon;
   day_of_week = tmptr.tm_wday;
-  mday = tmptr.tm_mday - 1;
+  mday = tmptr.tm_mday;
   hour = tmptr.tm_hour;
-
   if ((month > MARCH) && (month < OCTOBER))
     return epoch_time + 7200;
 
@@ -106,16 +105,16 @@ unsigned long correct_dst(const unsigned long epoch_time)
     return epoch_time + 3600;
 
   /* determine mday of last Sunday */
-  n = tmptr.tm_mday - 1;
+  n = tmptr.tm_mday;
   n -= day_of_week;
   n += 7;
   d = n % 7; /* date of first Sunday */
-
+  
   n = 31 - d;
   n /= 7; /* number of Sundays left in the month */
-
+  
   d = d + 7 * n; /* mday of final Sunday */
-
+ 
   if (month == MARCH)
   {
     if (d < mday)
